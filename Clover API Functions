@@ -1,0 +1,137 @@
+import requests
+import pandas as pd
+import io
+import pathlib
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode, quote
+
+mID = 'mID' #Common Grounds Merchant ID from Clover URL
+
+token = 'token' #from https://www.clover.com/setupapp/m/mID/api-tokens
+                                               #has read and write permissions for Customers and Merchant
+
+#Modifies the pool of results. Can only be used when getting data as JSON, not CSV
+Params = {
+    "limit": 50,
+    "offset": 100,
+    "orderBy": "customerSince DESC",
+    "expand" : "metadata",
+    "filter" : [
+        "customerSince >= 1785542400000" #Unix stamp in miliseconds
+        ]
+    }
+
+def getCustData(mID = mID, token = token, writecsv = False):
+    url = f"https://api.clover.com/v3/merchants/{mID}/customers.csv"
+
+    #Provides the token as credentials, sets permissions
+    Headers = {
+        "Accept" : "application/json",
+        "Authorization" : f"Bearer {token}"
+        }
+
+
+    response = requests.get(url, headers=Headers)
+
+    if writecsv:
+        with open('customers.csv', 'wb') as f:
+            f.write(response.content)
+        print(f"Customer data written to %s" % pathlib.Path.cwd())
+        return
+    
+    df = pd.read_csv(io.StringIO(response.text))
+    return df
+
+#Accessing data through JSON is required to pass parameters
+def getCustDataJSON(mID = mID, token = token, writecsv = False):
+    url = f"https://api.clover.com/v3/merchants/{mID}/customers"
+
+    #Provides the token as credentials, sets permissions
+    Headers = {
+        "Accept" : "application/json",
+        "Authorization" : f"Bearer {token}"
+        }
+
+    Params = {
+    "limit": 1000,
+    #"offset" : 5,
+    #"filter" : [
+    #    "customerSince>=1785542400000", #Unix stamp in miliseconds
+    #    "firstName!="""],
+    "filter" : "REWARDS_MEMBER",
+    "orderBy": "firstName ASC"
+    }
+
+    #Allows orderBy parameter by translating space to %20 in url
+    #doseq=True is required to allow multiple filters in list format
+    query_string = urlencode(Params, quote_via=quote, doseq=True) 
+    response = requests.get(f"{url}?{query_string}", headers=Headers)
+
+    df = pd.json_normalize(response.json()["elements"])
+
+    #Converts "Customer Since" from unix to %d-%b-%Y %I:%M %p %Z format ex 04-Aug-2026 02:22 PM EDT
+    df["customerSince"] = df["customerSince"].apply(lambda x : datetime.fromtimestamp(x/1000, tz=ZoneInfo("America/New_York")).strftime("%d-%b-%Y %I:%M %p %Z"))
+    
+    if writecsv:
+        df.to_csv("testdata2.csv")
+        return
+    return df
+
+
+def createCust(data, mID = mID, token = token):
+    url = f"https://api.clover.com/v3/merchants/{mID}/customers"
+
+    Headers = {
+            "Accept" : "application/json",
+            "Authorization" : f"Bearer {token}"
+            }
+
+    Payload = {
+        "firstName": data["firstName"],
+        "lastName": data["lastName"]
+        }
+
+    response = requests.post(url, json=Payload, headers=Headers)
+
+    print(response.text)
+
+
+def deleteCust(custID, mID = mID, token = token):
+    url = f"https://api.clover.com/v3/merchants/{mID}/customers/{custID}"
+
+    Headers = {
+                "Accept" : "application/json",
+                "Authorization" : f"Bearer {token}"
+                }
+
+    response = requests.delete(url, headers=Headers)
+
+def updateCust(custID, data, mID = mID, token = token):
+    url = f"https://api.clover.com/v3/merchants/{mID}/customers/{custID}"
+
+    Headers = {
+            "Accept" : "application/json",
+            "Authorization" : f"Bearer {token}"
+            }
+
+    Payload = {
+        "firstName": data["firstName"],
+        "lastName": data["lastName"]
+        }
+
+    response = requests.post(url, json=Payload, headers=Headers)
+
+    print(response.text)
+    
+def findID(name):
+    if isinstance(name, str):
+        match = re.search(r'\b\d{6, 7}\b', name) #Regex to find any customer names that contain an EMU ID number !TODO: this misses old 5 digit IDs!
+        return match.group(0) if match else float('nan')
+    return float('nan')
+
+#Sets fields to be imported with preferred formatting for Clover system, full name in "First Name" slot, EMU ID in "Last Name"
+def addIDs(dataframe):
+    dataframe["Full Name"] = dataframe["First Name"] + " " + dataframe["Last Name"]
+    dataframe["EMU ID"] = dataframe["Full Name"].apply(findID) 
+    return dataframe
