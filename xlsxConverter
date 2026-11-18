@@ -1,0 +1,22 @@
+import pandas as pd
+import os
+
+xlsxFolder = "G:\\Rebekah\\Health Insurance\\2025-26\\Waived-Enrolled Student Reports\\Fall\\All Fall Waivers"
+csvFolder = "G:\\Rebekah\\Health Insurance\\2025-26\\Waived-Enrolled Student Reports\\Fall\\All Fall Waivers\\Fall Waivers CSV"
+
+
+for file in os.listdir(xlsxFolder):
+    fullPath = os.path.join(xlsxFolder, file)
+    if os.path.isfile(fullPath):
+        df = pd.read_excel(fullPath)
+        csvFile = file.removesuffix(".xlsx") + ".csv"
+        csvPath = os.path.join(csvFolder, csvFile)
+        df.to_csv(csvPath, index=False, header=True)
+        print(f"Transferred: {file}")
+'''
+
+df = pd.read_excel(os.path.join(xlsxPath, "Waivers 6.20.25.xlsx"))
+df.head()
+df.to_csv(os.path.join(csvPath, "Waivers 6.20.25.csv"))
+
+        '''
